@@ -1,12 +1,17 @@
 import mesa
 
-enemy_starting_pos = (5, 5)
-formation_init_pos = {1: (4, 4), 2: (6, 0), 3: (2, -2), 4: (0, 0), 5: (-4, 0), 6: (-8, -1), 7: (-12, -4), 8: enemy_starting_pos}
+# Starting info
+ENEMY_STARTING_POS = (5, 5)
+FORMATION_INIT_POS = {1: (4, 4), 2: (6, 0), 3: (2, -2), 4: (0, 0), 5: (-4, 0), 6: (-8, -1), 7: (-12, -4), 8: ENEMY_STARTING_POS}
+EYE = 4       # id of the eye of the formation
 
+# Initial lists
 agent_list = []  # later will not be empty
 agent_pos = {}
 
-strategy = None  # options: None, "weakest", "eye" - strategy for enemy cultivator
+# Initial simulation logic
+STRATEGY = None  # options: None, "weakest", "eye" - strategy for enemy cultivator
+CENTER = EYE     # options: EYE (4) or 8 (enemy), center of formation
 
 def update_pos_list(agent_list):
     '''Update the dict of current agent pos'''
@@ -17,9 +22,11 @@ def update_pos_list(agent_list):
 
 class CultivatorAgent(mesa.Agent):
     '''An agent that represents a cultivator in a grid environment.'''
-    def __init__(self, model, health=100, power=10, windup_time=1, strike_time=1, recovery_time=1, speed=2, attack_range=1, type="formation"):
+    def __init__(self, model, health=100, power=10, windup_time=1, strike_time=1, recovery_time=1, speed=2, attack_range=1, max_defense=10, type="formation", strategy=None):
         # Mesa 3.0 automatically assigns a unique_id if not provided
         super().__init__(model)
+
+        # Stats
         self.health = health
         self.max_health = health
         self.power = power
@@ -27,12 +34,21 @@ class CultivatorAgent(mesa.Agent):
         self.strike_time = strike_time
         self.recovery_time = recovery_time
         self.speed = speed
+
+        # Info
         self.type = type  # formation or enemy
         self.id = None  # is later assigned with set_id()
         self.position = None  # remains None until placed on the grid; tuple
+
+        # Attack/defense
         self.attack_range = attack_range
+        self.max_defense = max_defense  # the maximum amount of damage this cultivator can defend against (for formation agents they do the connection thing so this sums, but this is just for a single cultivator)
+
+        # Use these to determine whether in windup or strike or neither
         self.attacking = False  # whether the agent is currently attacking
         self.windup_time_remaining = 0  # time left in windup phase
+
+# ======= BASIC HELPERS ======= #
 
     def set_id(self, id):
         '''Assign a formation ID to the agent.'''
@@ -40,7 +56,7 @@ class CultivatorAgent(mesa.Agent):
 
     def initialize_position(self):
         '''Assign initial formation position; requires id to be set already'''
-        self.position = formation_init_pos[self.id]
+        self.position = FORMATION_INIT_POS[self.id]
 
     def get_id(self):
         return self.id
@@ -54,44 +70,73 @@ class CultivatorAgent(mesa.Agent):
     def get_max_health(self):
         return self.max_health
 
-    def step_new_pos(self, alpha, beta, gamma):
-        '''Calculate the best new position for each member'''
-        change = alpha * self.encircle(agent_pos[8]) + beta * self.shape() + gamma * self.avoid(agent_pos)
-
-        # I guess self.shape should be pretty weighty since when attacking the cultivators need to be within each other's ranges in order to do the combo attack
-
-        # add logic about moore neighborhood and stuff
+# ======= ATTACK/DEFENSE ======= #
 
     def attack(self):
         '''Attack the enemy if within range'''
         # This is a placeholder for the attack logic
         # Find all enemies within range
         # For enemy cultivator:
-        # if no strategy, the pick a random cultivator
-        # if strategy, pick the target cultivator if the target cultivator is in range, else pick a random cultivator
+            # if no strategy, the pick a random cultivator
+            # if strategy, pick the target cultivator if the target cultivator is in range, else pick a random cultivator
         # For formation cultivator: check if enemy is in range, if so, all formation cultivators should give their power to this cultivator and this cultivator should attack the enemy
+
         # For now, just print an attack message
         print(f"Agent {self.id} attacks the enemy at position {enemy_starting_pos} with power {self.power}")
 
+    def defend(self, damage):  # model should call this and calculate the total aimed damage from all attackers
+        '''Defend against incoming attacks'''
+        # This is a placeholder for the defense logic
+        damage = damage - self.max_defense  # reduce damage by max defense
+        if damage > 0:
+            self.health -= damage
+            print(f"Agent {self.id} defends and takes {damage} damage, health now {self.health}")
+
+    def escape(self):
+        '''Escape from the range of hostile attack - should only be called if the agent actually able to move out of the range of attack
+        Overrides all other movement logic, so should be called first in the step() method if the agent is being attacked'''
+        # formation agent should move out of the range of the attack of the hostile entirely, and pick the point in its range of movement that minimizes its summed distance from the other formation members (so that they can still do the combo attack)
+
+        # the enemy should try to move to the point in its movement range that is both out of the attack range and farthest from all formation agents
+
+        # placeholder, for now just print an escape message
+        print(f"Agent {self.id} escapes!")
+
+# ======= MOVEMENT ======= #
+
+    def step_new_pos(self, alpha, beta, gamma):
+        '''Calculate the best new position for each member'''
+        change = alpha * self.encircle(agent_pos[8]) + beta * self.shape()
+
+        # I guess self.shape should be pretty weighty since when attacking the cultivators need to be within each other's ranges in order to do the combo attack
+
+        # add logic about moore neighborhood and stuff: as in, make sure the member can only move in the moore neighborhood a distance of their speed, like if their speed is 1 they can only move to their direct moore neighborhood in 1 tick, or if thier speed is 2 they can only move 1 farther than their direct moore neighborhood; if the ideal change is outside their movememt range then keep the direction but shrink the magnitude until it is within the range; make helper functions for this if necessary
+
+        # Before avoidance, set the new pos as self.pos so that avoidance function can call it to check and change if necessary
+
+        # avoidance will just be make sure the new position isn't already occupied, if so randomly pick a spot in that position's moore neighborhood that isn't occupied, if that position's entire moore neighborhood is occupied pick a random position in a more outer circle, etc
+
     def encircle(self, target_pos):
         '''Calculate the best change in pos for each member to encircle the target'''
-        # This is a placeholder for the encircling logic
-        # For now, just return the current position
+        # placeholder
         return (0,0)
 
     def shape(self):
         '''Calculate the best change in pos for each member to maintain formation shape'''
-        # This is a placeholder for the shape logic
-        # For now, just return the current position
+        # placeholder
+        return (0,0)
+
+    def rotate(self):
+        '''Calculate the best change in pos for each member to rotate the formation with the eye/enemy as the center once the enemy is near the eye'''
+        # placeholder
         return (0,0)
 
     def avoid(self, other_agents):
-        '''Calculate the best change in pos for each member to avoid collisions with other agents'''
-        # This is a placeholder for the avoidance logic
-        # For now, just return the current position
+        '''Check whether self.pos already has another agent, if so move to unoccupied Moore neighborhood, if still all occupied move to more outer circle, etc.'''
+        # placeholder
         return (0,0)
         
-    def step(self):
+    def step(self):   # 
         '''Define the agent's behavior for a single clock step.'''
         # 1. Get neighboring coordinates (Moore neighborhood: includes diagonals)
         # modify this to be x speed in the moore neighborhood in each direction - that's how far they can move in 1 tick, they can choose any range within that accessible range
@@ -130,7 +175,7 @@ class GridModel(mesa.Model):
 
         # Create and place the enemy cultivator
         # self, model, health, power, windup_time, strike_time, recovery_time, speed, attack_range, type
-        enemy_agent = CultivatorAgent(self, health=200, power=20, windup_time=0, strike_time=1, recovery_time=0, speed=3, attack_range=1, type="enemy")
+        enemy_agent = CultivatorAgent(self, health=200, power=20, windup_time=0, strike_time=1, recovery_time=0, speed=3, attack_range=1, max_defense=20, type="enemy", strategy=STRATEGY)
         enemy_agent.set_id(8)  # id = 8 for enemy
         agent.initialize_position()  # sets position based on id
 
