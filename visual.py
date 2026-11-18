@@ -42,7 +42,7 @@ model_params = {
     'full_speed': {'type': 'Checkbox', 'value': True, 'label': 'Members move at full speed'},
     'alpha': {'type': 'SliderFloat', 'value': ALPHA, 'label': 'alpha (encircle)', 'min': 0, 'max': 6, 'step': 0.1},
     'beta': {'type': 'SliderFloat', 'value': BETA, 'label': 'beta (shape)', 'min': 0, 'max': 6, 'step': 0.1},
-    'gamma': {'type': 'SliderFloat', 'value': GAMMA, 'label': 'gamma (rotate, rad/tick)', 'min': 0, 'max': 1.0, 'step': 0.01},
+    'gamma': {'type': 'SliderFloat', 'value': GAMMA, 'label': 'gamma (rotate, rad/tick)', 'min': 0, 'max': 6, 'step': 0.1},
     'delta': {'type': 'SliderFloat', 'value': DELTA, 'label': 'delta (close in)', 'min': 0, 'max': 6, 'step': 0.1},
     'center': {'type': 'Select', 'value': EYE, 'values': [EYE, ENEMY], 'label': 'Center (4 = eye, 8 = enemy)'},
 }
@@ -61,12 +61,13 @@ page = SolaraViz(
     components=[   # sliders + graph data
         make_space_component(agent_portrayal),
         make_plot_component(['Enemy health', 'Formation health']),
-        make_plot_component('Shape error'),
-        make_plot_component('Formation angle (deg)'),
+        # make_plot_component('Shape error'),
+        # make_plot_component('Formation angle (deg)'),
         ScoreCard,   # result + score once the fight ends (last, so it doesn't push the graphs down)
     ],
     model_params=model_params,
     name='北斗阵 (Battle)',
+    play_interval=1,
 )
 
 page  # solara run visual.py

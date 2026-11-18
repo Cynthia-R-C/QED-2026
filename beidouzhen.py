@@ -31,9 +31,9 @@ ENEMY_BLOCKS_SMALL = False  # True = enemy spends its turn defending against any
 # Movement weights: change = ALPHA * f_encircle + BETA * f_shape + GAMMA * f_rotate (tune later)
 ALPHA = 3.0   # f_encircle is a unit vector, so ALPHA = cells/tick of pull toward the enemy
 # ALPHA = 3.0   # f_encircle points at my spot on the encirclement circle; ALPHA = cells/tick toward it (never overshooting the spot)  (circle version, reverted)
-BETA = 1.0    # f_shape is the full vector to the ideal slot, so BETA = fraction of the gap closed per tick
-GAMMA = 0.3  # f_rotate has magnitude r, so GAMMA ~ angular speed in rad/tick (0.15 rad ~ 8.6 deg)
-DELTA = 3.0   # f_close_in is the full vector to the ideal slot, so DELTA = fraction of the gap closed per tick; only used when the middle is attacked
+BETA = 3.0    # f_shape is a unit vector toward the ideal slot, so BETA = cells/tick of pull toward it
+GAMMA = 1.5  # f_rotate is a unit tangent vector, so GAMMA = cells/tick of pull around the center
+DELTA = 3.0   # f_close_in is a unit vector toward the nearest attack spot, so DELTA = cells/tick of pull toward it; only used when the middle is attacked
 ROTATE_TRIGGER = 6  # rotation kicks in once the enemy is within this many cells (Euclidean) of the eye
 FULL_SPEED = True  # True: move at full speed in the direction the movement equation points (tiny corrections < 1 cell stay small); False: move only as far as the forces add up to
 FENCE_GAP = 1  # if the enemy is within this many cells of the line between two members, it's standing in their gap, so that fence doesn't block it
@@ -77,6 +77,12 @@ def update_pos_list(agent_list):
         id = agent.get_id()
         pos = agent.get_pos()
         agent_pos[id] = pos
+
+
+def unit(v):
+    '''Same direction, length 1 (zero vector stays zero)'''
+    d = math.hypot(v[0], v[1])
+    return (v[0] / d, v[1] / d) if d > 0 else (0, 0)
 
 
 def rotate_vec(v, angle):
@@ -680,9 +686,9 @@ class CultivatorAgent(mesa.Agent):
         return (dx / d, dy / d) if d > 0 else (0, 0)
 
     def shape(self):
-        '''f_shape: vector from current member position to ideal slot (spring: bigger gap = bigger pull)'''
+        '''f_shape: unit vector from current member position toward ideal slot'''
         ideal = self.ideal_pos()
-        return (ideal[0] - self.pos[0], ideal[1] - self.pos[1])
+        return unit((ideal[0] - self.pos[0], ideal[1] - self.pos[1]))
 
     def ideal_pos(self):
         '''Where this member should ideally be to keep the formation shape, helper for shape()'''
@@ -703,7 +709,7 @@ class CultivatorAgent(mesa.Agent):
         return (curr_piv[0] + off[0], curr_piv[1] + off[1])
 
     def rotate(self):
-        '''f_rotate: tangent vector around center CCW, only once the enemy is near the eye'''
+        '''f_rotate: unit tangent vector around center CCW, only once the enemy is near the eye'''
 
         p = pivot_id()
         if math.dist(agent_pos[ENEMY], agent_pos[p]) > ROTATE_TRIGGER:  # if enemy is outside rotating range
@@ -716,10 +722,10 @@ class CultivatorAgent(mesa.Agent):
 
         rx, ry = self.pos[0] - center[0], self.pos[1] - center[1]  # dist from center
 
-        return (-ry, rx)  # (rx, ry) turned 90 dg counterclockwise; tangent vector around center
+        return unit((-ry, rx))  # (rx, ry) turned 90 dg counterclockwise; tangent vector around center
 
     def close_in(self):
-        '''f_close_in: full vector to the nearest free cell where the agent can hit the enemy (so delta = fraction of the gap closed per tick)'''
+        '''f_close_in: unit vector toward the nearest free cell where the agent can hit the enemy'''
 
         enemy_pos = agent_pos[ENEMY]
         grid = self.model.grid
@@ -737,7 +743,7 @@ class CultivatorAgent(mesa.Agent):
         else:
             goal = enemy_pos  # all attack spots taken, just head for the enemy
 
-        return (goal[0] - self.pos[0], goal[1] - self.pos[1])
+        return unit((goal[0] - self.pos[0], goal[1] - self.pos[1]))
 
     def avoid(self, new_pos):
         '''Check whether new_pos already has another agent, if so move to unoccupied neighboring cell, if still all occupied move to more outer circle, etc.'''
@@ -1050,7 +1056,7 @@ class GridModel(mesa.Model):
         if not enemy.is_alive():
             self.winner, self.running = 'formation', False
 
-        elif sum(not m.is_alive() for m in self.members()) >= 5:  # breakpoint: 5 of 7 dead (71%, top of Clark's 1954 historical 10 to 70% range) = formation side defeated
+        elif sum(not m.is_alive() for m in self.members()) >= 5:  # breakpoint: 5 of 7 dead
             self.winner, self.running = 'enemy', False
 
         elif self.steps >= self.max_ticks:
