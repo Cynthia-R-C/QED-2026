@@ -22,7 +22,6 @@ agent_pos = {}   # id -> (x, y), updated live as each agent moves (so later move
 # Initial simulation logic
 STRATEGY = None  # options: None, 'weakest', 'eye' - strategy for enemy cultivator
 CENTER = EYE     # options: EYE (4) or 8 (enemy), center of formation
-CLOSE_IN_OVERRIDE = False  # True: when the middle is attacked, head/tail drop the movement equation and charge the enemy; False: close-in stays in the movement equation as the delta term
 MAX_TICKS = 300  # stop the fight after this many rounds (round = formation turn + enemy turn)
 MODE = 'formation'  # options: 'formation' (北斗阵) or 'baseline' (same 7 members, no formation: everyone fights for themselves)
 BASELINE_COLLISIONS = True  # baseline only: True = members can't share a cell; False = they can stack on each other (not on the enemy)
@@ -786,7 +785,7 @@ class CultivatorAgent(mesa.Agent):
 class GridModel(mesa.Model):
     '''The grid model for modeling formation and enemy movements / battle.'''
     def __init__(self, width=60, height=60, alpha=ALPHA, beta=BETA, gamma=GAMMA, delta=DELTA, center=CENTER, strategy=STRATEGY,
-                 close_in_override=CLOSE_IN_OVERRIDE, mode=MODE, baseline_collisions=BASELINE_COLLISIONS, enemy_blocks_small=ENEMY_BLOCKS_SMALL,
+                 mode=MODE, baseline_collisions=BASELINE_COLLISIONS, enemy_blocks_small=ENEMY_BLOCKS_SMALL,
                  full_speed=FULL_SPEED, max_ticks=MAX_TICKS, verbose=False, seed=None):
         # Mesa 3.0 explicitly requires seed initializing the base class
         super().__init__(seed=seed)
@@ -794,7 +793,6 @@ class GridModel(mesa.Model):
         self.steps = 0  # global step counter
         self.alpha, self.beta, self.gamma, self.delta = alpha, beta, gamma, delta
         self.center = center
-        self.close_in_override = close_in_override
         self.mode = mode  # 'formation' or 'baseline'
         self.baseline_collisions = baseline_collisions
         self.enemy_blocks_small = enemy_blocks_small
@@ -986,15 +984,7 @@ class GridModel(mesa.Model):
         if not enemy.is_alive():  # nobody left to move toward
             return
 
-        # 3. head/tail close in when the middle is attacked (override toggle: skip the movement equation and charge)
-        if responders and self.close_in_override:
-            for m in free:
-                if m not in acted and m.get_id() in responders:
-                    m.approach(enemy)
-                    acted.add(m)
-                    self.count('formation', 'close in (override)')
-
-        # 4. everyone else: normal movement (responders get the delta close-in term when not overriding)
+        # 3. everyone else: normal movement (responders get the delta close-in term)
         self.shared_phi = formation_turn()  # one angle for the whole formation this turn, taken before anyone moves (otherwise each mover saw a different angle)
         for m in sorted(free, key=lambda m: m.get_id() != pivot_id()):  # pivot (eye) claims its cell first
             if m in acted or not m.is_alive():

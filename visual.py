@@ -38,7 +38,6 @@ model_params = {
     'mode': {'type': 'Select', 'value': 'formation', 'values': ['formation', 'baseline'], 'label': 'Group (formation or baseline)'},
     'baseline_collisions': {'type': 'Checkbox', 'value': True, 'label': 'Baseline: members block each other'},
     'strategy': {'type': 'Select', 'value': 'none', 'values': ['none', 'weakest', 'eye'], 'label': 'Enemy strategy'},
-    'close_in_override': {'type': 'Checkbox', 'value': False, 'label': 'Head/tail close-in overrides movement'},
     'full_speed': {'type': 'Checkbox', 'value': True, 'label': 'Members move at full speed'},
     'alpha': {'type': 'SliderFloat', 'value': ALPHA, 'label': 'alpha (encircle)', 'min': 0, 'max': 6, 'step': 0.1},
     'beta': {'type': 'SliderFloat', 'value': BETA, 'label': 'beta (shape)', 'min': 0, 'max': 6, 'step': 0.1},
