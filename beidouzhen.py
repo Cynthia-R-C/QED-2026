@@ -6,14 +6,13 @@ import mesa
 # Starting info
 ENEMY_STARTING_POS = (10, -5)
 FORMATION_INIT_POS = {1: (14, 9), 2: (16, 5), 3: (12, 3), 4: (10, 5), 5: (6, 5), 6: (2, 4), 7: (-2, 1), 8: ENEMY_STARTING_POS}
-EYE = 4       # id of formation eye
-# HEAD = 1  # 天枢 - no longer needed, facing is now a best-fit rotation of all members (formation_turn), not just eye->head
+EYE = 4     # id of formation eye
 ENEMY = 8     # id of the enemy
 GRID_OFFSET = (20, 25)  # FORMATION_INIT_POS has negative coords, so shift everything onto the grid
 
 # Sections of the formation for attack/defense (edit if splitting differently)
 HEAD_IDS = {1, 2, 3}    # spoon
-MIDDLE_IDS = {4}        # 天权
+MIDDLE_IDS = {4}      # 天权
 TAIL_IDS = {5, 6, 7}    # handle
 
 # Initial lists
@@ -35,7 +34,7 @@ ALPHA = 3.0   # f_encircle is a unit vector, so ALPHA = cells/tick of pull towar
 BETA = 1.0    # f_shape is the full vector to the ideal slot, so BETA = fraction of the gap closed per tick
 GAMMA = 0.3  # f_rotate has magnitude r, so GAMMA ~ angular speed in rad/tick (0.15 rad ~ 8.6 deg)
 DELTA = 3.0   # f_close_in is the full vector to the ideal slot, so DELTA = fraction of the gap closed per tick; only used when the middle is attacked
-ROTATE_TRIGGER = 6  # rotation kicks in once the enemy is within this many cells (Chebyshev) of the eye
+ROTATE_TRIGGER = 6  # rotation kicks in once the enemy is within this many cells (Euclidean) of the eye
 FULL_SPEED = True  # True: move at full speed in the direction the movement equation points (tiny corrections < 1 cell stay small); False: move only as far as the forces add up to
 FENCE_GAP = 1  # if the enemy is within this many cells of the line between two members, it's standing in their gap, so that fence doesn't block it
 
@@ -48,7 +47,7 @@ QZ_WINDUP = 1
 QZ_STRIKE = 1
 QZ_RECOVERY = 2
 QZ_SPEED = 4
-QZ_ATT_RANGE = 5
+QZ_ATT_RANGE = 6
 QZ_MAX_DEF = 10
 # QZ_HIT = 0.05  # chance a single member's strike connects (a chain of n connects with 1 - (1 - QZ_HIT)^n)
 QZ_HIT = 0.05  # chance a single member's strike connects
@@ -61,7 +60,7 @@ E_WINDUP = 0
 E_STRIKE = 1
 E_RECOVERY = 0
 E_SPEED = 12
-E_ATT_RANGE = 2
+E_ATT_RANGE = 3
 E_MAX_DEF = 40
 E_HIT = 0.99  # chance the enemy's strike connects (nearly certain)
 
@@ -78,11 +77,6 @@ def update_pos_list(agent_list):
         id = agent.get_id()
         pos = agent.get_pos()
         agent_pos[id] = pos
-
-
-def chebyshev(a, b):
-    '''Moore-neighborhood distance'''
-    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
 def rotate_vec(v, angle):
@@ -206,7 +200,7 @@ class CultivatorAgent(mesa.Agent):
         self.strike_time = strike_time      # turns the strike takes (the landing turn counts as 1)
         # self.recovery_time = recovery_time  # turns stuck after the strike
         self.recovery_time = recovery_time  # turns stuck after taking damage (staggered by the hit)
-        self.speed = speed  # max cells per tick in any direction (Moore radius)
+        self.speed = speed  # max cells per tick in any direction (Euclidean radius)
 
         # Info
         self.type = type  # formation or enemy
@@ -259,8 +253,8 @@ class CultivatorAgent(mesa.Agent):
         return self.health > 0
 
     def can_hit(self, other):
-        '''Whether other is within my attack range (Chebyshev)'''
-        return chebyshev(self.get_pos(), other.get_pos()) <= self.attack_range
+        '''Whether other is within my attack range (Euclidean)'''
+        return math.dist(self.get_pos(), other.get_pos()) <= self.attack_range
 
     def log(self, msg):
         '''One-line action log, only when the model is verbose'''
@@ -275,9 +269,9 @@ class CultivatorAgent(mesa.Agent):
         agent_pos[self.id] = cell
 
     def reachable_cells(self, stack=False):
-        '''Free cells within speed (Moore radius), plus staying put; stack=True also allows cells with only teammates in them'''
+        '''Free cells within speed (Euclidean radius), plus staying put; stack=True also allows cells with only teammates in them'''
         grid = self.model.grid
-        cells = grid.get_neighborhood(self.get_pos(), moore=True, include_center=False, radius=self.speed)
+        cells = [c for c in grid.get_neighborhood(self.get_pos(), moore=True, include_center=False, radius=self.speed) if math.dist(c, self.get_pos()) <= self.speed]  # square neighborhood cut down to the circle of radius speed
 
         if stack:  # baseline with collisions off - teammates don't block, the enemy still does
             return [c for c in cells if all(a.type == self.type for a in grid.get_cell_list_contents([c]))] + [self.get_pos()]
@@ -294,7 +288,7 @@ class CultivatorAgent(mesa.Agent):
 
         while frontier:  # keep adding anyone within range of someone already in the chain (checking order doesn't matter, the chain ends up the same)
             cur = frontier.pop()
-            near = [m for m in rest if chebyshev(cur.get_pos(), m.get_pos()) <= min(cur.attack_range, m.attack_range)]  # both have to be in each other's range
+            near = [m for m in rest if math.dist(cur.get_pos(), m.get_pos()) <= min(cur.attack_range, m.attack_range)]  # both have to be in each other's range
 
             for m in near:  # move them into the chain, then check their neighbors too
                 rest.remove(m)
@@ -463,7 +457,7 @@ class CultivatorAgent(mesa.Agent):
         else:
             hostiles = [threat]  # formation member just has to get away from the enemy
 
-        safe = [c for c in self.reachable_cells() if c != self.get_pos() and all(chebyshev(c, h.get_pos()) > h.attack_range for h in hostiles)]  # out of the attackers' range (staying put isn't escaping)
+        safe = [c for c in self.reachable_cells() if c != self.get_pos() and all(math.dist(c, h.get_pos()) > h.attack_range for h in hostiles)]  # out of the attackers' range (staying put isn't escaping)
 
         if self.type == 'enemy':  # can't teleport through the encirclement: the path out can't cross between members whose ranges meet
             safe = [c for c in safe if not self.path_blocked(c, members)]
@@ -474,7 +468,7 @@ class CultivatorAgent(mesa.Agent):
         if self.type == 'enemy':
 
             def exposure(c):  # how many members could still reach me there next turn (fewer = better)
-                return sum(chebyshev(c, m.get_pos()) <= m.attack_range for m in members)
+                return sum(math.dist(c, m.get_pos()) <= m.attack_range for m in members)
 
             if toward is not None:  # strategy: escape toward the target member
                 best = min(safe, key=lambda c: (exposure(c), math.dist(c, toward.get_pos())))
@@ -503,7 +497,7 @@ class CultivatorAgent(mesa.Agent):
         for i, a in enumerate(members):  # pair loops, every possible combo of 2 members
             for b in members[i + 1:]:
 
-                if chebyshev(a.get_pos(), b.get_pos()) <= a.attack_range + b.attack_range:  # ranges cover gap between them
+                if math.dist(a.get_pos(), b.get_pos()) <= a.attack_range + b.attack_range:  # ranges cover gap between them
                     if dist_to_segment(me, a.get_pos(), b.get_pos()) <= FENCE_GAP:  # I'm standing right in their gap, not behind their fence: it can't stop me
                         continue
                     if crosses(me, cell, a.get_pos(), b.get_pos()):
@@ -613,7 +607,7 @@ class CultivatorAgent(mesa.Agent):
             self.attack(goal)  # enemy has windup 0, so this lands immediately
 
         else:
-            
+
             best = min(self.reachable_cells(), key=lambda c: math.dist(c, goal.get_pos()))  # best get toward the goal this turn
             if math.dist(best, goal.get_pos()) >= math.dist(self.get_pos(), goal.get_pos()) and in_range:  # can't get any closer
                 self.attack(self.random.choice(in_range))  # blocked from the goal: hit whoever's in the way instead
@@ -641,13 +635,13 @@ class CultivatorAgent(mesa.Agent):
 
         # Normalize to maximum formation speed
         if self.model.full_speed:
-            biggest = max(abs(change[0]), abs(change[1]))  # largest change out of delta x delta y
+            biggest = math.hypot(change[0], change[1])  # length of the move
 
             if biggest >= 1:  # tiny corrections (< 1 cell) stay tiny so I can settle into place
                 k = self.speed / biggest
-                change = (change[0] * k, change[1] * k)  # dilate so that max coord change = max speed (overshoot)
+                change = (change[0] * k, change[1] * k)  # dilate so that move length = max speed (overshoot)
 
-        # Keep direction, shrink magnitude until it's within the Chevyshev range of speed
+        # Keep direction, shrink magnitude until it's within the Euclidean range of speed
         change = self.clamp_to_speed(change)
 
         # Move the exact (float) position, then snap to the nearest grid cell
@@ -667,9 +661,9 @@ class CultivatorAgent(mesa.Agent):
         return final
 
     def clamp_to_speed(self, change):
-        '''Shrink the change vector (same direction) so it fits within speed cells of Moore distance'''
+        '''Shrink the change vector (same direction) so it fits within speed cells of Euclidean distance'''
 
-        biggest = max(abs(change[0]), abs(change[1]))  # Moore distance of the move
+        biggest = math.hypot(change[0], change[1])  # length of the move
 
         if biggest <= self.speed:
             return change
@@ -712,7 +706,7 @@ class CultivatorAgent(mesa.Agent):
         '''f_rotate: tangent vector around center CCW, only once the enemy is near the eye'''
 
         p = pivot_id()
-        if chebyshev(agent_pos[ENEMY], agent_pos[p]) > ROTATE_TRIGGER:  # if enemy is outside rotating range
+        if math.dist(agent_pos[ENEMY], agent_pos[p]) > ROTATE_TRIGGER:  # if enemy is outside rotating range
             return (0, 0)
 
         if self.model.center == EYE:
@@ -729,7 +723,7 @@ class CultivatorAgent(mesa.Agent):
 
         enemy_pos = agent_pos[ENEMY]
         grid = self.model.grid
-        ring = grid.get_neighborhood(enemy_pos, moore=True, include_center=False, radius=self.attack_range)  # cells that can hit the enemy
+        ring = [c for c in grid.get_neighborhood(enemy_pos, moore=True, include_center=False, radius=self.attack_range) if math.dist(c, enemy_pos) <= self.attack_range]  # cells that can hit the enemy
         open_cells = [c for c in ring if grid.is_cell_empty(c) or c == self.pos]  # current cell counts as open too
 
         if open_cells:
@@ -746,7 +740,7 @@ class CultivatorAgent(mesa.Agent):
         return (goal[0] - self.pos[0], goal[1] - self.pos[1])
 
     def avoid(self, new_pos):
-        '''Check whether new_pos already has another agent, if so move to unoccupied Moore neighborhood, if still all occupied move to more outer circle, etc.'''
+        '''Check whether new_pos already has another agent, if so move to unoccupied neighboring cell, if still all occupied move to more outer circle, etc.'''
         grid = self.model.grid
 
         def free(cell):
@@ -755,16 +749,11 @@ class CultivatorAgent(mesa.Agent):
         if free(new_pos):  # if free it's fine
             return new_pos
 
-        for radius in range(1, 2 * self.speed + 2):  # rings around new_pos, nearest first
-
-            ring = []  # list of pos
-            for c in grid.get_neighborhood(new_pos, moore=True, include_center=False, radius=radius):
-                if chebyshev(c, new_pos) == radius:  # only the outer ring
-                    ring.append(c)
+        for radius in range(1, math.ceil(math.dist(new_pos, self.pos) + self.speed) + 1):  # farthest ring that can still hold a reachable cell = dist to target + speed
 
             options = []
             for c in grid.get_neighborhood(new_pos, moore=True, include_center=False, radius=radius):
-                if chebyshev(c, new_pos) == radius and free(c) and chebyshev(c, self.pos) <= self.speed:  # must still be reachable this tick
+                if radius - 1 < math.dist(c, new_pos) <= radius and free(c) and math.dist(c, self.pos) <= self.speed:  # must still be reachable this tick (ring = cells more than radius - 1 and at most radius away)
                     options.append(c)
 
             if options:   # pick random option
@@ -843,7 +832,6 @@ class GridModel(mesa.Model):
         # Update for start
         # The data collector lambda m thing is a standard Mesa initialization method
         update_pos_list(agent_list)
-        # 'Eye-enemy dist': lambda m: chebyshev(agent_pos[EYE], agent_pos[ENEMY])  # removed: crashes once the eye or enemy dies
         self.datacollector = mesa.DataCollector(model_reporters={'Shape error': lambda m: m.shape_error(), 'Formation angle (deg)': lambda m: m.formation_angle(),
                                                                  'Enemy health': lambda m: m.enemy().get_health(), 'Formation health': lambda m: sum(a.get_health() for a in m.members()),
                                                                  'Largest gap (deg)': lambda m: m.largest_gap()})
@@ -909,7 +897,7 @@ class GridModel(mesa.Model):
 
         # If enemy won
         else: # score will be in negatives; relative value still matters because it tells us how badly we lost
-            # loss condition = entire formation dead
+            # loss condition = 5/7 of formation dead
             score -= enemy.get_health() / enemy.get_max_health()  # normalize health
             score += self.steps / self.max_ticks  # normalize steps, slower loss is better; look into normalizing this if the # of steps overshadows the health aspect of the score too much
 
@@ -956,7 +944,7 @@ class GridModel(mesa.Model):
 
             else:  # head/tail: step back out of the enemy's range, and the two members around it counterattack
 
-                around = sorted([m for m in free if m is not attacked], key=lambda m: chebyshev(m.get_pos(), attacked.get_pos()))[:2]  # the two closest free members
+                around = sorted([m for m in free if m is not attacked], key=lambda m: math.dist(m.get_pos(), attacked.get_pos()))[:2]  # the two closest free members
                 responders = {m.get_id() for m in around}  # they go first in the attacks below, and close in if out of range
                 split = set(responders)  # the two each strike, so don't fold one into the other's chain
 
@@ -1062,7 +1050,7 @@ class GridModel(mesa.Model):
         if not enemy.is_alive():
             self.winner, self.running = 'formation', False
 
-        elif not any(m.is_alive() for m in self.members()):
+        elif sum(not m.is_alive() for m in self.members()) >= 5:  # breakpoint: 5 of 7 dead (71%, top of Clark's 1954 historical 10 to 70% range) = formation side defeated
             self.winner, self.running = 'enemy', False
 
         elif self.steps >= self.max_ticks:
