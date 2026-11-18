@@ -47,7 +47,7 @@ QZ_STRIKE = 1
 QZ_RECOVERY = 2
 QZ_SPEED = 4
 QZ_ATT_RANGE = 6
-QZ_MAX_DEF = 10
+QZ_MAX_DEF = 15
 # QZ_HIT = 0.05  # chance a single member's strike connects (a chain of n connects with 1 - (1 - QZ_HIT)^n)
 QZ_HIT = 0.05  # chance a single member's strike connects
 QZ_CHAIN_HIT = 0.8  # chance a chain attack (2+ members) connects - the combined force is much harder to slip without moving, but not certain (蛤蟆功 counter, breaking the weakest link)
@@ -229,6 +229,7 @@ class CultivatorAgent(mesa.Agent):
         self.supporters = []    # chain members passing me power (attack)
         self.support_of = None    # the member I'm passing power to
         self.last_action = 'idle'  # what I did on my last turn (for the visualization)
+        self.guard = 0  # defense my free neighbors in range lend me when I'm attacked (formation only, lasts until my next turn)
 
 # ======= BASIC HELPERS ======= #
 
@@ -381,10 +382,9 @@ class CultivatorAgent(mesa.Agent):
 
     def defend(self, damage, attacker=None):  # model should call this and calculate the total aimed damage from all attackers
         '''Defend against incoming attacks'''
-        # This is a placeholder for the defense logic
-        # damage = damage - self.max_defense  # reduce damage by max defense  (now only if actually defending, and chain-summed)
+        
         if self.state == 'defend':
-            damage = damage - self.max_defense  # reduce damage by max defense
+            damage = damage - self.max_defense - self.guard  # own block + what responders lend
         # not defending: take the full hit
 
         if damage > 0:
@@ -419,6 +419,7 @@ class CultivatorAgent(mesa.Agent):
         '''Defensive stance only lasts until my next turn'''
         if self.state == 'defend':
             self.state = 'idle'
+        self.guard = 0  # neighbors' cover only lasts one round too
 
     def begin_turn(self):
         '''Advance windup/recovery/support; returns True if busy this turn'''
@@ -631,7 +632,7 @@ class CultivatorAgent(mesa.Agent):
         c = (0, 0)  # no close-in unless delta > 0 (was unset before -> crash when delta = 0)
 
         if delta > 0:
-            c = self.close_in()   # the head and tail closes in to attack the enemy if the middle is attacked, and the middle escapes
+            c = self.close_in()   # the head and tail closes in to attack the enemy if the middle is attacked, and the middle holds still
 
         change = (alpha * e[0] + beta * s[0] + gamma * r[0] + delta * c[0],
                   alpha * e[1] + beta * s[1] + gamma * r[1] + delta * c[1])
@@ -909,7 +910,7 @@ class GridModel(mesa.Model):
         return score
 
     def formation_turn(self):
-        '''Formation's turn: the attacked member reacts first, then attacks, then head/tail close in, then everyone else moves'''
+        '''Formation's turn: the attacked member holds still and braces, then attacks, then head/tail close in, then everyone else moves'''
         enemy = self.enemy()
         alive = [m for m in self.members() if m.is_alive()]
 
@@ -935,29 +936,21 @@ class GridModel(mesa.Model):
         if enemy.target is not None and enemy.target.is_alive() and enemy.can_hit(enemy.target):
             attacked = enemy.target
 
-        # 1. attacked member reacts first (escape overrides all other movement)
+        # 1. attacked member holds still and braces (以静制动, 盘膝而坐), responders cover it and counterattack
         if attacked is not None and attacked in free:
 
-            if attacked.get_id() in MIDDLE_IDS:  # middle: escape unless cornered; head + tail close in to hit the enemy
+            if attacked.get_id() in MIDDLE_IDS:  # middle: head + tail respond (击腰则首尾皆应)
                 responders = HEAD_IDS | TAIL_IDS  # union of sets
 
-                if attacked.escape(enemy):
-                    self.count('formation', 'middle escape')
-                else:
-                    attacked.brace()
-                    self.count('formation', 'middle cornered -> defend')
-
-            else:  # head/tail: step back out of the enemy's range, and the two members around it counterattack
+            else:  # head/tail: the two members around it respond (身旁道侣侧击反攻)
 
                 around = sorted([m for m in free if m is not attacked], key=lambda m: math.dist(m.get_pos(), attacked.get_pos()))[:2]  # the two closest free members
                 responders = {m.get_id() for m in around}  # they go first in the attacks below, and close in if out of range
                 split = set(responders)  # the two each strike, so don't fold one into the other's chain
 
-                if attacked.escape(enemy):
-                    self.count('formation', 'head/tail escape')
-                else:
-                    attacked.brace()  # cornered: defend alone
-                    self.count('formation', 'head/tail cornered -> defend')
+            attacked.brace()
+            attacked.guard = sum(m.max_defense for m in free if m.get_id() in responders and math.dist(m.get_pos(), attacked.get_pos()) <= m.attack_range)  # free responders close enough to reach the hit sum their defenses
+            self.count('formation', ('middle' if attacked.get_id() in MIDDLE_IDS else 'head/tail') + (' guarded' if attacked.guard > 0 else ' defends alone'))
 
             acted.add(attacked)  # attacked member used its turn either way
 
