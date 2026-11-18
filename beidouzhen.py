@@ -31,8 +31,8 @@ ENEMY_BLOCKS_SMALL = False  # True = enemy spends its turn defending against any
 # Movement weights: change = ALPHA * f_encircle + BETA * f_shape + GAMMA * f_rotate (tune later)
 ALPHA = 3.0   # f_encircle is a unit vector, so ALPHA = cells/tick of pull toward the enemy
 # ALPHA = 3.0   # f_encircle points at my spot on the encirclement circle; ALPHA = cells/tick toward it (never overshooting the spot)  (circle version, reverted)
-BETA = 3.0    # f_shape is a unit vector toward the ideal slot, so BETA = cells/tick of pull toward it
-GAMMA = 1.5  # f_rotate is a unit tangent vector, so GAMMA = cells/tick of pull around the center
+BETA = 4.5    # f_shape is a unit vector toward the ideal slot, so BETA = cells/tick of pull toward it
+GAMMA = 3.0  # f_rotate is a unit tangent vector, so GAMMA = cells/tick of pull around the center
 DELTA = 3.0   # f_close_in is a unit vector toward the nearest attack spot, so DELTA = cells/tick of pull toward it; only used when the middle is attacked
 ROTATE_TRIGGER = 6  # rotation kicks in once the enemy is within this many cells (Euclidean) of the eye
 FULL_SPEED = True  # True: move at full speed in the direction the movement equation points (tiny corrections < 1 cell stay small); False: move only as far as the forces add up to
@@ -695,7 +695,7 @@ class CultivatorAgent(mesa.Agent):
 
         p = pivot_id()  # the eye, unless it's dead
         init_eye, eye = FORMATION_INIT_POS[p], agent_pos[p]
-        phi = formation_turn()  # curr angle of formation
+        phi = self.model.shared_phi if self.model.shared_phi is not None else formation_turn()  # curr angle of formation (the shared one during movement)
         orig_pos = FORMATION_INIT_POS[self.id]
 
         if self.model.center == EYE:  # shape built around the eye's current spot
@@ -803,6 +803,7 @@ class GridModel(mesa.Model):
         self.verbose = verbose   # print every action
         self.winner = None       # 'formation', 'enemy', or 'timeout' once the fight ends
         self.action_counts = {}  # (who, action) -> count, to check which rules actually fire
+        self.shared_phi = None  # formation angle every member uses during the movement step (None = compute it live)
 
         # fresh globals for every new model (e.g. hitting Reset in the visualization)
         agent_list.clear()
@@ -994,12 +995,15 @@ class GridModel(mesa.Model):
                     self.count('formation', 'close in (override)')
 
         # 4. everyone else: normal movement (responders get the delta close-in term when not overriding)
+        self.shared_phi = formation_turn()  # one angle for the whole formation this turn, taken before anyone moves (otherwise each mover saw a different angle)
         for m in sorted(free, key=lambda m: m.get_id() != pivot_id()):  # pivot (eye) claims its cell first
             if m in acted or not m.is_alive():
                 continue
 
             d = self.delta if m.get_id() in responders else 0  # close-in term only for responders
             m.step(delta=d)
+
+        self.shared_phi = None  # movement's done, back to live
 
     def baseline_turn(self):
         '''Baseline's turn: same 7 members, no formation'''
