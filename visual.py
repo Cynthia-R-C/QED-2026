@@ -35,11 +35,14 @@ def ScoreCard(model):
 
 # sliders
 model_params = {
+    'mode': {'type': 'Select', 'value': 'formation', 'values': ['formation', 'baseline'], 'label': 'Group (formation or baseline)'},
+    'baseline_collisions': {'type': 'Checkbox', 'value': True, 'label': 'Baseline: members block each other'},
     'strategy': {'type': 'Select', 'value': 'none', 'values': ['none', 'weakest', 'eye'], 'label': 'Enemy strategy'},
     'close_in_override': {'type': 'Checkbox', 'value': False, 'label': 'Head/tail close-in overrides movement'},
+    'full_speed': {'type': 'Checkbox', 'value': True, 'label': 'Members move at full speed'},
     'alpha': {'type': 'SliderFloat', 'value': ALPHA, 'label': 'alpha (encircle)', 'min': 0, 'max': 6, 'step': 0.1},
     'beta': {'type': 'SliderFloat', 'value': BETA, 'label': 'beta (shape)', 'min': 0, 'max': 6, 'step': 0.1},
-    'gamma': {'type': 'SliderFloat', 'value': GAMMA, 'label': 'gamma (rotate, rad/tick)', 'min': 0, 'max': 1, 'step': 0.01},
+    'gamma': {'type': 'SliderFloat', 'value': GAMMA, 'label': 'gamma (rotate, rad/tick)', 'min': 0, 'max': 1.0, 'step': 0.01},
     'delta': {'type': 'SliderFloat', 'value': DELTA, 'label': 'delta (close in)', 'min': 0, 'max': 6, 'step': 0.1},
     'center': {'type': 'Select', 'value': EYE, 'values': [EYE, ENEMY], 'label': 'Center (4 = eye, 8 = enemy)'},
 }
